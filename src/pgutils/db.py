@@ -41,7 +41,7 @@ class Db(object):
     :raise: :class:`psycopg2.OperationalError`
     """
 
-    def __init__(self, conn=None, dbname=None, host=None, port=None,
+    def __init__(self, conn=None, dsn=None, dbname=None, host=None, port=None,
                  user=None, password=None):
         if conn is None:
             self.dbname = dbname
@@ -50,10 +50,13 @@ class Db(object):
             self.user = user
             self.password = password
             try:
-                self.conn = psycopg2.connect(
-                    dbname=dbname, host=host, port=port, user=user,
-                    password=password
-                )
+                if dsn is None:
+                    self.conn = psycopg2.connect(
+                        dbname=dbname, host=host, port=port, user=user,
+                        password=password
+                    )
+                else:
+                    self.conn = psycopg2.connect(dsn=dsn)
                 log.debug(f"Opened connection to {self.conn.get_dsn_parameters()}")
             except psycopg2.OperationalError:
                 log.exception("I'm unable to connect to the database")
