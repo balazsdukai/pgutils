@@ -26,22 +26,22 @@ python -m pip install git+https://github.com/balazsdukai/pgutils.git pgutils
 Connect to postgres with full credentials:
 
 ```python
-import pgutils
+from pgutils.connection import DatabaseConnection
 
-conn = pgutils.db.Db(dbname="database name", 
-                     host="host name", 
-                     port=1234,
-                     user="user name", 
-                     password="password")
+conn = DatabaseConnection(dbname="database name",
+                          hostname="host name",
+                          port=1234,
+                          username="user name",
+                          password="password")
 conn.close()
 ```
 
 Or get the credentials from a `.pgpass` file:
 
 ```python
-import pgutils
+from pgutils.connection import DatabaseConnection
 
-conn = pgutils.db.Db(dbname="database name")
+conn = DatabaseConnection(dbname="database name")
 conn.close()
 ```
 
@@ -49,7 +49,6 @@ Retrive the results of an SQL query.
 
 ```python
 from psycopg2 import sql
-from pgutils import db
 
 query_params = {
     "idx": sql.Identifier("schema.table"),
