@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Database connection handling.
 
-Copyright (c) 2021, Balázs Dukai.
+Copyright (c) 2022, Balázs Dukai.
 
 The MIT License (MIT)
 
@@ -30,29 +30,29 @@ from collections import abc
 from keyword import iskeyword
 
 import psycopg2
-from psycopg2 import sql, extras, extensions, errors
+from psycopg2 import sql, extras, extensions
 
 log = logging.getLogger(__name__)
 
 
-class Db(object):
+class DatabaseConnection(object):
     """A database connection class.
 
     :raise: :class:`psycopg2.OperationalError`
     """
 
-    def __init__(self, conn=None, dsn=None, dbname=None, host=None, port=None,
-                 user=None, password=None):
+    def __init__(self, conn=None, dsn=None, dbname=None, hostname=None, port=None,
+                 username=None, password=None):
         if conn is None:
             self.dbname = dbname
-            self.host = host
+            self.host = hostname
             self.port = port
-            self.user = user
+            self.user = username
             self.password = password
             try:
                 if dsn is None:
                     self.conn = psycopg2.connect(
-                        dbname=dbname, host=host, port=port, user=user,
+                        dbname=dbname, host=hostname, port=port, user=username,
                         password=password
                     )
                 else:
@@ -65,8 +65,7 @@ class Db(object):
             self.conn = conn
 
     def send_query(self, query: psycopg2.sql.Composable):
-        """Send a query to the DB when no results need to return (e.g. CREATE).
-        """
+        """Send a query to the DB when no results need to return (e.g. CREATE)."""
         with self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(query)
@@ -82,13 +81,14 @@ class Db(object):
         """DB query where the results need to return as a dictionary."""
         with self.conn:
             with self.conn.cursor(
-                cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(query)
                 return cur.fetchall()
 
     def print_query(self, query: psycopg2.sql.Composable) -> str:
         """Format a SQL query for printing by replacing newlines and tab-spaces.
         """
+
         def repl(matchobj):
             if matchobj.group(0) == '    ':
                 return ' '
@@ -140,6 +140,7 @@ class Db(object):
 
 def identifier(relation_name):
     """Property factory for returning a :class:`psycopg2.sql.Identifier`."""
+
     def id_getter(instance):
         return sql.Identifier(instance.__dict__[relation_name])
 
@@ -151,6 +152,7 @@ def identifier(relation_name):
 
 def literal(relation_name):
     """Property factory for returning a :class:`psycopg2.sql.Literal`."""
+
     def lit_getter(instance):
         return sql.Literal(instance.__dict__[relation_name])
 
@@ -160,7 +162,7 @@ def literal(relation_name):
     return property(lit_getter, lit_setter)
 
 
-class DbRelation:
+class DatabaseRelation:
     """Database relation name.
 
     An escaped SQL identifier of the relation name is accessible through the
@@ -216,7 +218,7 @@ class Schema:
         elif isinstance(arg, abc.MutableSequence):
             return [cls(item) for item in arg]
         else:
-            return DbRelation(arg)
+            return DatabaseRelation(arg)
 
     def __init__(self, mapping):
         self.__data = {}
@@ -230,4 +232,3 @@ class Schema:
             return getattr(self.__data, name)
         else:
             return Schema(self.__data[name])
-

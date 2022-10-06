@@ -1,6 +1,40 @@
 [build-system]
-requires = [
-    "setuptools>=57",
-    "wheel"
-]
+requires = ["setuptools>=65.3"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "pgutils"
+version = "2021.1001"
+description = "Wrappers around psycopg2 functions to make life easier. No ORM."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT License" }
+authors = [
+    { name = "Balázs Dukai", email = "balazs@balazsdukai.me" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Unix"
+]
+urls = { github = "https://github.com/balazsdukai/pgutils" }
+dependencies = [
+    "psycopg2-binary"
+]
+optional-dependencies = { dev = ["pytest", "bumpver", "tox"] }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.bumpver]
+current_version = "2021.1001"
+version_pattern = "YYYY.BUILD"
+commit_message = "bump version {old_version} -> {new_version}"
+commit = true
+tag = true
+push = false
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = [
+    'version = "{version}"',
+]

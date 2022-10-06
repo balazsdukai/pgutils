@@ -1,2 +1,4 @@
 .idea/
 venv/
+.tox/
+/src/pgutils.egg-info/
