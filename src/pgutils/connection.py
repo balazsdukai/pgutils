@@ -45,9 +45,9 @@ class DatabaseConnection(object):
                  username=None, password=None):
         if conn is None:
             self.dbname = dbname
-            self.host = hostname
+            self.hostname = hostname
             self.port = port
-            self.user = username
+            self.username = username
             self.password = password
             try:
                 if dsn is None:
