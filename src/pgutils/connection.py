@@ -215,7 +215,7 @@ class PostgresConnection(object):
             version = None
         return version
 
-    def get_fields(self, table: PostgresTableIdentifier):
+    def get_fields(self, table: PostgresTableIdentifier) -> List[Tuple]:
         """List the fields and data types in a table.
 
         From: https://stackoverflow.com/a/58319308
@@ -250,13 +250,13 @@ class PostgresConnection(object):
         )
         return self.get_query(query)[0][0]
 
-    def count_nulls(self, table: PostgresTableIdentifier):
+    def count_nulls(self, table: PostgresTableIdentifier) -> List[RealDictRow]:
         query = inject_parameters(
             "SELECT * FROM pgutils_count_nulls({table})",
             {"table": str(table)}
         )
         try:
-            return self.get_query(query)
+            return self.get_dict(query)
         except errors.UndefinedFunction:
             raise errors.UndefinedFunction(
                 "Create the pgutils-functions with PostgresFunctions().")
