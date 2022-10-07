@@ -29,8 +29,10 @@ from typing import List, Tuple, Union
 from collections import abc
 from keyword import iskeyword
 
-import psycopg2
-from psycopg2 import sql, extras, extensions
+from psycopg2 import connect, OperationalError, Error
+from psycopg2 import errors
+from psycopg2.extras import RealDictCursor
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from psycopg2.sql import Identifier, Literal, Composable, Composed, SQL
 
 log = logging.getLogger(__name__)
@@ -76,7 +78,7 @@ class PostgresIdentifier:
         return Identifier(self.schema.string, self.name.string)
 
     def __repr__(self):
-        return f'"{self.schema.string}"."{self.name.string}"'
+        return f'{self.schema.string}.{self.name.string}'
 
 
 class PostgresTableIdentifier(PostgresIdentifier):
@@ -122,7 +124,7 @@ def inject_parameters(sql: Union[str, Composable], params: dict = None) -> Compo
         return _sql.format(**_params)
 
 
-class DatabaseConnection(object):
+class PostgresConnection(object):
     """A database connection class.
 
     :raise: :class:`psycopg2.OperationalError`
@@ -138,41 +140,46 @@ class DatabaseConnection(object):
             self.password = password
             try:
                 if dsn is None:
-                    self.conn = psycopg2.connect(
+                    self.conn = connect(
                         dbname=dbname, host=hostname, port=port, user=username,
                         password=password
                     )
                 else:
-                    self.conn = psycopg2.connect(dsn=dsn)
+                    self.conn = connect(dsn=dsn)
                 log.debug(f"Opened connection to {self.conn.get_dsn_parameters()}")
-            except psycopg2.OperationalError:
+            except OperationalError:
                 log.exception("I'm unable to connect to the database")
                 raise
         else:
             self.conn = conn
 
-    def send_query(self, query: psycopg2.sql.Composable):
+    def close(self):
+        """Close connection."""
+        self.conn.close()
+        log.debug("Closed database successfully")
+
+    def send_query(self, query: Composable):
         """Send a query to the DB when no results need to return (e.g. CREATE)."""
         with self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(query)
 
-    def get_query(self, query: psycopg2.sql.Composable) -> List[Tuple]:
+    def get_query(self, query: Composable) -> List[Tuple]:
         """DB query where the results need to return (e.g. SELECT)."""
         with self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(query)
                 return cur.fetchall()
 
-    def get_dict(self, query: psycopg2.sql.Composable) -> dict:
+    def get_dict(self, query: Composable) -> dict:
         """DB query where the results need to return as a dictionary."""
         with self.conn:
             with self.conn.cursor(
-                    cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cursor_factory=RealDictCursor) as cur:
                 cur.execute(query)
                 return cur.fetchall()
 
-    def print_query(self, query: psycopg2.sql.Composable) -> str:
+    def print_query(self, query: Composable) -> str:
         """Format a SQL query for printing by replacing newlines and tab-spaces."""
 
         def repl(matchobj):
@@ -186,27 +193,25 @@ class DatabaseConnection(object):
 
     def vacuum(self, schema: str, table: str):
         """Vacuum analyze a table."""
-        self.conn.set_isolation_level(
-            psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+        self.conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
         schema = Identifier(schema)
         table = Identifier(table)
-        query = psycopg2.sql.SQL("""
+        query = SQL("""
         VACUUM ANALYZE {schema}.{table};
         """).format(schema=schema, table=table)
         self.send_query(query)
 
     def vacuum_full(self):
         """Vacuum analyze the whole database."""
-        self.conn.set_isolation_level(
-            psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
-        query = psycopg2.sql.SQL("VACUUM ANALYZE;")
+        self.conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        query = SQL("VACUUM ANALYZE;")
         self.send_query(query)
 
     def check_postgis(self):
         """Check if PostGIS is installed."""
         try:
             version = self.get_query("SELECT PostGIS_version();")[0][0]
-        except psycopg2.Error as e:
+        except Error:
             version = None
         return version
 
@@ -228,19 +233,75 @@ class DatabaseConnection(object):
         WHERE
             pg_attribute.attnum > 0
             AND NOT pg_attribute.attisdropped
-            AND pg_namespace.nspname = '{schema}'
-            AND pg_class.relname = '{table}'
+            AND pg_namespace.nspname = {schema}
+            AND pg_class.relname = {table}
         ORDER BY
             attnum ASC;
         """
-        query = inject_parameters(_q, {"schema": str(table.schema),
-                                       "table": str(table.name)})
+        query = inject_parameters(_q, {"schema": table.schema.string,
+                                       "table": table.name.string})
+        log.debug(self.print_query(query))
         return self.get_query(query)
 
-    def close(self):
-        """Close connection."""
-        self.conn.close()
-        log.debug("Closed database successfully")
+    def count_nulls(self, table: PostgresTableIdentifier):
+        query = inject_parameters(
+            "SELECT * FROM pgutils_count_nulls({table})",
+            {"table": str(table)}
+        )
+        try:
+            return self.get_query(query)
+        except errors.UndefinedFunction:
+            raise errors.UndefinedFunction(
+                "Create the pgutils-functions with PostgresFunctions().")
+
+
+class PostgresFunctions:
+    """A collection of PostgreSQL functions."""
+
+    def __init__(self, conn: PostgresConnection):
+        self.created = []
+        self.__count_nulls(conn)
+
+    def __count_nulls(self, conn):
+        """Count the number of missing values in each column in a table.
+
+        SELECT * FROM pgutils_count_nulls('schema.table');
+
+        From https://dba.stackexchange.com/a/285850
+        """
+        fname = "pgutils_count_nulls(_tbl regclass)"
+        try:
+            func = """
+            CREATE OR REPLACE FUNCTION pgutils_count_nulls(_tbl regclass)
+              RETURNS TABLE (column_name text, missing_values bigint)
+              LANGUAGE plpgsql STABLE PARALLEL SAFE AS
+            $func$
+            BEGIN
+               RETURN QUERY EXECUTE (
+               SELECT format(
+               $$
+               SELECT x.*
+               FROM  (SELECT count(*) AS ct, %s FROM %s) t
+               CROSS  JOIN LATERAL (VALUES %s) x(col, nulls)
+               ORDER  BY nulls DESC, col DESC
+               $$, string_agg(format('count(%1$I) AS %1$I', attname), ', ')
+                 , $1
+                 , string_agg(format('(%1$L, ct - %1$I)', attname), ', ')
+                  )
+               FROM   pg_catalog.pg_attribute
+               WHERE  attrelid = $1
+               AND    attnum > 0
+               AND    NOT attisdropped
+               -- more filters?
+               );
+            END
+            $func$;
+            """
+            conn.send_query(func)
+            log.info(f"Created function: {fname}")
+            self.created.append(fname)
+        except Exception as e:
+            log.info(f"Failed to create function: {fname}\n{e}")
 
 
 def identifier(relation_name):
@@ -259,7 +320,7 @@ def literal(relation_name):
     """Property factory for returning a :class:`psycopg2.sql.Literal`."""
 
     def lit_getter(instance):
-        return sql.Literal(instance.__dict__[relation_name])
+        return Literal(instance.__dict__[relation_name])
 
     def lit_setter(instance, value):
         instance.__dict__[relation_name] = value
@@ -339,54 +400,3 @@ class Schema:
         else:
             return Schema(self.__data[name])
 
-
-class PostgresFunctions:
-    """A collection of PostgreSQL functions."""
-
-    def __init__(self, conn: DatabaseConnection):
-        self.created = []
-        self.__count_nulls(conn)
-
-    def __count_nulls(self, conn):
-        """Count the number of missing values in each column in a table.
-
-        SELECT * FROM f_count_nulls('schema.table');
-
-        From https://dba.stackexchange.com/a/285850
-        """
-        fname = "f_count_nulls(_tbl regclass)"
-        try:
-            func = """
-            CREATE OR REPLACE FUNCTION f_count_nulls(_tbl regclass)
-              RETURNS TABLE (column_name text, missing_values bigint)
-              LANGUAGE plpgsql STABLE PARALLEL SAFE AS
-            $func$
-            BEGIN
-               RETURN QUERY EXECUTE (
-               SELECT format(
-               $$
-               SELECT x.*
-               FROM  (SELECT count(*) AS ct, %s FROM %s) t
-               CROSS  JOIN LATERAL (VALUES %s) x(col, nulls)
-               ORDER  BY nulls DESC, col DESC
-               $$, string_agg(format('count(%1$I) AS %1$I', attname), ', ')
-                 , $1
-                 , string_agg(format('(%1$L, ct - %1$I)', attname), ', ')
-                  )
-               FROM   pg_catalog.pg_attribute
-               WHERE  attrelid = $1
-               AND    attnum > 0
-               AND    NOT attisdropped
-               -- more filters?
-               );
-            END
-            $func$;
-            """
-            conn.send_query(func)
-            log.info(f"Created function: {fname}")
-            self.created.append(fname)
-        except Exception as e:
-            log.info(f"Failed to create function: {fname}\n{e}")
-
-    def __field_types(self, conn):
-        """Get the columns name and types for a table."""

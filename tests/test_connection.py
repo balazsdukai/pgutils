@@ -23,12 +23,23 @@ def test_inject_parameters():
     assert str(query) == expect
 
 
-def test_inject_parameters_str():
-    query = SQL("select * from '{tbl}' where field1 = {val};")
-    query_params = {
-        'tbl': PostgresTableIdentifier('myschema', 'mytable'),
-        'val': 1
-    }
+def test_inject_parameters_str(conn):
+    query = SQL("SELECT * FROM pg_namespace WHERE pg_namespace.nspname = {tbl};")
+    tbls = conn["tblid"].schema.string
+    query_params = {'tbl': tbls,}
     query = inject_parameters(sql=query, params=query_params)
-    expect = "Composed([SQL('select * from '), Identifier('myschema', 'mytable'), SQL(' where field1 = '), Literal(1), SQL(';')])"
-    assert str(query) == expect
+    qstr = conn["conn"].print_query(query)
+    expect = "SELECT * FROM pg_namespace WHERE pg_namespace.nspname = 'wippolder';"
+    assert qstr == expect
+
+
+def test_get_fields(conn):
+    tbl = conn["tblid"]
+    res = conn["conn"].get_fields(tbl)
+    print(res)
+    assert len(res) > 0
+
+
+def test_count_nulls(conn):
+    res = conn["conn"].count_nulls(conn["tblid"])
+    print(res)

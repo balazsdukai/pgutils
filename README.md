@@ -26,9 +26,9 @@ python -m pip install git+https://github.com/balazsdukai/pgutils.git pgutils
 Connect to postgres with full credentials:
 
 ```python
-from pgutils.connection import DatabaseConnection
+from pgutils.connection import PostgresConnection
 
-conn = DatabaseConnection(dbname="database name",
+conn = PostgresConnection(dbname="database name",
                           hostname="host name",
                           port=1234,
                           username="user name",
@@ -39,9 +39,9 @@ conn.close()
 Or get the credentials from a `.pgpass` file:
 
 ```python
-from pgutils.connection import DatabaseConnection
+from pgutils.connection import PostgresConnection
 
-conn = DatabaseConnection(dbname="database name")
+conn = PostgresConnection(dbname="database name")
 conn.close()
 ```
 
