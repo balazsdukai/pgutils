@@ -243,6 +243,13 @@ class PostgresConnection(object):
         log.debug(self.print_query(query))
         return self.get_query(query)
 
+    def get_count(self, table: PostgresTableIdentifier):
+        query = inject_parameters(
+            "SELECT count(*) FROM {table}",
+            {"table": table}
+        )
+        return self.get_query(query)[0][0]
+
     def count_nulls(self, table: PostgresTableIdentifier):
         query = inject_parameters(
             "SELECT * FROM pgutils_count_nulls({table})",

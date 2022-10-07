@@ -43,3 +43,9 @@ def test_get_fields(conn):
 def test_count_nulls(conn):
     res = conn["conn"].count_nulls(conn["tblid"])
     print(res)
+
+
+def test_count(conn):
+    res = conn["conn"].get_count(conn["tblid"])
+    print(res)
+    assert isinstance(res, int)
