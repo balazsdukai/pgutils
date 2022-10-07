@@ -49,3 +49,8 @@ def test_count(conn):
     res = conn["conn"].get_count(conn["tblid"])
     print(res)
     assert isinstance(res, int)
+
+
+def test_head(conn):
+    res = conn["conn"].get_head(conn["tblid"])
+    print(res)

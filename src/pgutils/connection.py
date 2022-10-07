@@ -31,7 +31,7 @@ from keyword import iskeyword
 
 from psycopg2 import connect, OperationalError, Error
 from psycopg2 import errors
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, RealDictRow
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from psycopg2.sql import Identifier, Literal, Composable, Composed, SQL
 
@@ -171,7 +171,7 @@ class PostgresConnection(object):
                 cur.execute(query)
                 return cur.fetchall()
 
-    def get_dict(self, query: Composable) -> dict:
+    def get_dict(self, query: Composable) -> List[RealDictRow]:
         """DB query where the results need to return as a dictionary."""
         with self.conn:
             with self.conn.cursor(
@@ -260,6 +260,13 @@ class PostgresConnection(object):
         except errors.UndefinedFunction:
             raise errors.UndefinedFunction(
                 "Create the pgutils-functions with PostgresFunctions().")
+
+    def get_head(self, table: PostgresTableIdentifier) -> List[RealDictRow]:
+        query = inject_parameters(
+            "SELECT * FROM {table} LIMIT 5",
+            {"table": table}
+        )
+        return self.get_dict(query)
 
 
 class PostgresFunctions:
