@@ -28,7 +28,6 @@ import re
 from typing import List, Tuple, Union
 from collections import abc
 from keyword import iskeyword
-from abc import ABCMeta, abstractmethod
 
 import psycopg2
 from psycopg2 import sql, extras, extensions
@@ -283,3 +282,52 @@ class Schema:
             return getattr(self.__data, name)
         else:
             return Schema(self.__data[name])
+
+
+class PostgresFunctions:
+    """A collection of PostgreSQL functions."""
+    def __init__(self, conn: DatabaseConnection):
+        self.created = []
+        self.__count_nulls(conn)
+
+    def __count_nulls(self, conn):
+        """Count the number of missing values in each column in a table.
+
+        SELECT * FROM f_count_nulls('schema.table');
+
+        From https://dba.stackexchange.com/a/285850
+        """
+        fname = "f_count_nulls(_tbl regclass)"
+        try:
+            func = """
+            CREATE OR REPLACE FUNCTION f_count_nulls(_tbl regclass)
+              RETURNS TABLE (column_name text, missing_values bigint)
+              LANGUAGE plpgsql STABLE PARALLEL SAFE AS
+            $func$
+            BEGIN
+               RETURN QUERY EXECUTE (
+               SELECT format(
+               $$
+               SELECT x.*
+               FROM  (SELECT count(*) AS ct, %s FROM %s) t
+               CROSS  JOIN LATERAL (VALUES %s) x(col, nulls)
+               ORDER  BY nulls DESC, col DESC
+               $$, string_agg(format('count(%1$I) AS %1$I', attname), ', ')
+                 , $1
+                 , string_agg(format('(%1$L, ct - %1$I)', attname), ', ')
+                  )
+               FROM   pg_catalog.pg_attribute
+               WHERE  attrelid = $1
+               AND    attnum > 0
+               AND    NOT attisdropped
+               -- more filters?
+               );
+            END
+            $func$;
+            """
+            conn.send_query(func)
+            log.info(f"Created function: {fname}")
+            self.created.append(fname)
+        except Exception as e:
+            log.info(f"Failed to create function: {fname}\n{e}")
+
