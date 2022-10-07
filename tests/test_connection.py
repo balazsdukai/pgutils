@@ -1,4 +1,4 @@
-from connection import TableRef
+from pgutils import TableRef
 
 
 def test_tableref():
