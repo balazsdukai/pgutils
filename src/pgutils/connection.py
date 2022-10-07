@@ -25,7 +25,7 @@ SOFTWARE.
 """
 import logging
 import re
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from collections import abc
 from keyword import iskeyword
 
@@ -33,6 +33,25 @@ import psycopg2
 from psycopg2 import sql, extras, extensions
 
 log = logging.getLogger(__name__)
+
+
+class TableRef:
+    """PosgreSQL table reference.
+
+    :ivar id: Table indentifier (schema.table).
+    :type id: :py:class:`psycopg2.sql.Identifier`
+    """
+
+    def __init__(self, schema: Union[str, sql.Identifier],
+                 table: [str, sql.Identifier]):
+        self.schema = schema if isinstance(schema, sql.Identifier) else sql.Identifier(
+            schema)
+        self.table = table if isinstance(table, sql.Identifier) else sql.Identifier(
+            table)
+        self.id = sql.Identifier(self.schema.string, self.table.string)
+
+    def __repr__(self):
+        return f'"{self.schema.string}"."{self.table.string}"'
 
 
 class DatabaseConnection(object):
@@ -86,8 +105,7 @@ class DatabaseConnection(object):
                 return cur.fetchall()
 
     def print_query(self, query: psycopg2.sql.Composable) -> str:
-        """Format a SQL query for printing by replacing newlines and tab-spaces.
-        """
+        """Format a SQL query for printing by replacing newlines and tab-spaces."""
 
         def repl(matchobj):
             if matchobj.group(0) == '    ':
