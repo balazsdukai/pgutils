@@ -1,8 +1,8 @@
-from pgutils import TableRef
+from pgutils import PostgresTableIdentifier
 
 
 def test_tableref():
-    tref = TableRef("schema", "table")
+    tref = PostgresTableIdentifier("schema", "table")
     sql_format = "select * from {}".format(tref)
     sql_fstring = f"select * from {tref}"
     expected = 'select * from "schema"."table"'

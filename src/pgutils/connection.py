@@ -28,9 +28,11 @@ import re
 from typing import List, Tuple, Union
 from collections import abc
 from keyword import iskeyword
+from abc import ABCMeta, abstractmethod
 
 import psycopg2
 from psycopg2 import sql, extras, extensions
+from psycopg2.sql import Identifier, Literal
 
 log = logging.getLogger(__name__)
 
@@ -101,8 +103,8 @@ class DatabaseConnection(object):
         """Vacuum analyze a table."""
         self.conn.set_isolation_level(
             psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
-        schema = psycopg2.sql.Identifier(schema)
-        table = psycopg2.sql.Identifier(table)
+        schema = Identifier(schema)
+        table = Identifier(table)
         query = psycopg2.sql.SQL("""
         VACUUM ANALYZE {schema}.{table};
         """).format(schema=schema, table=table)
@@ -141,7 +143,7 @@ def identifier(relation_name):
     """Property factory for returning a :class:`psycopg2.sql.Identifier`."""
 
     def id_getter(instance):
-        return sql.Identifier(instance.__dict__[relation_name])
+        return Identifier(instance.__dict__[relation_name])
 
     def id_setter(instance, value):
         instance.__dict__[relation_name] = value
@@ -182,28 +184,58 @@ class DatabaseRelation:
 
     def __add__(self, other):
         if isinstance(other, self.__class__):
-            return sql.Identifier(self.string, other.string)
+            return Identifier(self.string, other.string)
         else:
             raise TypeError(f"Unsupported type {other.__class__}")
 
 
-class TableRef:
-    """PosgreSQL table reference.
+class PostgresIdentifier:
+    """PosgreSQL identifier that stores the schema with it.
 
-    :ivar id: Table indentifier (schema.table).
+    The attributes are :py:class:`psycopg2.sql.Identifier`.
+
+    :ivar id: Relation indentifier (schema.name).
     :type id: :py:class:`psycopg2.sql.Identifier`
     """
 
-    def __init__(self, schema: Union[str, sql.Identifier],
-                 table: [str, sql.Identifier]):
-        self.schema = schema if isinstance(schema, sql.Identifier) else sql.Identifier(
-            schema)
-        self.table = table if isinstance(table, sql.Identifier) else sql.Identifier(
-            table)
-        self.id = sql.Identifier(self.schema.string, self.table.string)
+    def __init__(self, schema: Union[str, Identifier], name: [str, Identifier]):
+        self.schema = schema
+        self.name = name
+
+    @property
+    def schema(self):
+        return self._schema
+
+    @schema.setter
+    def schema(self, value):
+        if isinstance(value, Identifier):
+            self._schema = value
+        else:
+            self._schema = Identifier(value)
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        if isinstance(value, Identifier):
+            self._name = value
+        else:
+            self._name = Identifier(value)
+
+    @property
+    def id(self):
+        return Identifier(self.schema.string, self.name.string)
 
     def __repr__(self):
-        return f'"{self.schema.string}"."{self.table.string}"'
+        return f'"{self.schema.string}"."{self.name.string}"'
+
+
+class PostgresTableIdentifier(PostgresIdentifier):
+
+    def __init__(self, schema: Union[str, Identifier], table: [str, Identifier]):
+        super().__init__(schema=schema, name=table)
 
 
 class Schema:
