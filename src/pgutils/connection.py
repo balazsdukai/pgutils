@@ -35,25 +35,6 @@ from psycopg2 import sql, extras, extensions
 log = logging.getLogger(__name__)
 
 
-class TableRef:
-    """PosgreSQL table reference.
-
-    :ivar id: Table indentifier (schema.table).
-    :type id: :py:class:`psycopg2.sql.Identifier`
-    """
-
-    def __init__(self, schema: Union[str, sql.Identifier],
-                 table: [str, sql.Identifier]):
-        self.schema = schema if isinstance(schema, sql.Identifier) else sql.Identifier(
-            schema)
-        self.table = table if isinstance(table, sql.Identifier) else sql.Identifier(
-            table)
-        self.id = sql.Identifier(self.schema.string, self.table.string)
-
-    def __repr__(self):
-        return f'"{self.schema.string}"."{self.table.string}"'
-
-
 class DatabaseConnection(object):
     """A database connection class.
 
@@ -187,7 +168,8 @@ class DatabaseRelation:
     `sqlid` property, which returns a :class:`psycopg2.sql.Identifier`.
 
     Concatenation of identifiers is supported through the `+` operator.
-    For example `DbRelation('schema') + DbRelation('table')`.
+
+    >>> DatabaseRelation('schema') + DatabaseRelation('table')
     """
     sqlid = identifier('sqlid')
 
@@ -203,6 +185,25 @@ class DatabaseRelation:
             return sql.Identifier(self.string, other.string)
         else:
             raise TypeError(f"Unsupported type {other.__class__}")
+
+
+class TableRef:
+    """PosgreSQL table reference.
+
+    :ivar id: Table indentifier (schema.table).
+    :type id: :py:class:`psycopg2.sql.Identifier`
+    """
+
+    def __init__(self, schema: Union[str, sql.Identifier],
+                 table: [str, sql.Identifier]):
+        self.schema = schema if isinstance(schema, sql.Identifier) else sql.Identifier(
+            schema)
+        self.table = table if isinstance(table, sql.Identifier) else sql.Identifier(
+            table)
+        self.id = sql.Identifier(self.schema.string, self.table.string)
+
+    def __repr__(self):
+        return f'"{self.schema.string}"."{self.table.string}"'
 
 
 class Schema:

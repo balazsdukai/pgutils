@@ -1,4 +1,5 @@
 .idea/
 venv/
 .tox/
+build/
 /src/pgutils.egg-info/
