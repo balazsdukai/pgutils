@@ -31,9 +31,95 @@ from keyword import iskeyword
 
 import psycopg2
 from psycopg2 import sql, extras, extensions
-from psycopg2.sql import Identifier, Literal
+from psycopg2.sql import Identifier, Literal, Composable, Composed, SQL
 
 log = logging.getLogger(__name__)
+
+
+class PostgresIdentifier:
+    """PosgreSQL identifier that stores the schema with it.
+
+    The attributes are :py:class:`psycopg2.sql.Identifier`.
+
+    :ivar id: Relation indentifier (schema.name).
+    :type id: :py:class:`psycopg2.sql.Identifier`
+    """
+
+    def __init__(self, schema: Union[str, Identifier], name: [str, Identifier]):
+        self.schema = schema
+        self.name = name
+
+    @property
+    def schema(self):
+        return self._schema
+
+    @schema.setter
+    def schema(self, value):
+        if isinstance(value, Identifier):
+            self._schema = value
+        else:
+            self._schema = Identifier(value)
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        if isinstance(value, Identifier):
+            self._name = value
+        else:
+            self._name = Identifier(value)
+
+    @property
+    def id(self):
+        return Identifier(self.schema.string, self.name.string)
+
+    def __repr__(self):
+        return f'"{self.schema.string}"."{self.name.string}"'
+
+
+class PostgresTableIdentifier(PostgresIdentifier):
+
+    def __init__(self, schema: Union[str, Identifier], table: [str, Identifier]):
+        super().__init__(schema=schema, name=table)
+
+
+def inject_parameters(sql: Union[str, Composable], params: dict = None) -> Composed:
+    """Inject parameters into a parameterized SQL snippet.
+
+    If a parameter value is a :py:class:`pgutils.PostgresIdentifier` it is handled as
+    a SQL identifier, otherwise the value is handled
+    as a :py:class:`psycopg2.sql.Literal`.
+
+    Args:
+        sql (Union[str, Composable]): A SQL query.
+        params (dict): Query parameters as a dictionary.
+
+    For example:
+
+    .. code-block:: python
+
+        query = SQL('select * from {tbl} where field1 = {val};')
+
+        query_params = {
+            'tbl': PostgresTableIdentifier('myschema', 'mytable'),
+            'val': 1
+        }
+
+        inject_parameters(sql=query, params=query_params)
+    """
+    _sql = sql if isinstance(sql, SQL) else SQL(sql)
+    if params is None:
+        return _sql.format()
+    else:
+        _params = {}
+        for k, v in params.items():
+            if isinstance(v, PostgresIdentifier):
+                _params[k] = v.id
+            else:
+                _params[k] = Literal(v)
+        return _sql.format(**_params)
 
 
 class DatabaseConnection(object):
@@ -124,13 +210,32 @@ class DatabaseConnection(object):
             version = None
         return version
 
-    def get_fields(self, table):
-        """List the fields in a table."""
-        query = sql.SQL("SELECT * FROM {table} LIMIT 0;").format(table=table)
-        with self.conn:
-            with self.conn.cursor() as cur:
-                cur.execute(query)
-                return [desc[0] for desc in cur.description]
+    def get_fields(self, table: PostgresTableIdentifier):
+        """List the fields and data types in a table.
+
+        From: https://stackoverflow.com/a/58319308
+        """
+        _q = """
+        SELECT
+            pg_attribute.attname AS column_name,
+            pg_catalog.format_type(pg_attribute.atttypid, pg_attribute.atttypmod) AS data_type
+        FROM
+            pg_catalog.pg_attribute
+        INNER JOIN
+            pg_catalog.pg_class ON pg_class.oid = pg_attribute.attrelid
+        INNER JOIN
+            pg_catalog.pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+        WHERE
+            pg_attribute.attnum > 0
+            AND NOT pg_attribute.attisdropped
+            AND pg_namespace.nspname = '{schema}'
+            AND pg_class.relname = '{table}'
+        ORDER BY
+            attnum ASC;
+        """
+        query = inject_parameters(_q, {"schema": str(table.schema),
+                                       "table": str(table.name)})
+        return self.get_query(query)
 
     def close(self):
         """Close connection."""
@@ -188,55 +293,6 @@ class DatabaseRelation:
             raise TypeError(f"Unsupported type {other.__class__}")
 
 
-class PostgresIdentifier:
-    """PosgreSQL identifier that stores the schema with it.
-
-    The attributes are :py:class:`psycopg2.sql.Identifier`.
-
-    :ivar id: Relation indentifier (schema.name).
-    :type id: :py:class:`psycopg2.sql.Identifier`
-    """
-
-    def __init__(self, schema: Union[str, Identifier], name: [str, Identifier]):
-        self.schema = schema
-        self.name = name
-
-    @property
-    def schema(self):
-        return self._schema
-
-    @schema.setter
-    def schema(self, value):
-        if isinstance(value, Identifier):
-            self._schema = value
-        else:
-            self._schema = Identifier(value)
-
-    @property
-    def name(self):
-        return self._name
-
-    @name.setter
-    def name(self, value):
-        if isinstance(value, Identifier):
-            self._name = value
-        else:
-            self._name = Identifier(value)
-
-    @property
-    def id(self):
-        return Identifier(self.schema.string, self.name.string)
-
-    def __repr__(self):
-        return f'"{self.schema.string}"."{self.name.string}"'
-
-
-class PostgresTableIdentifier(PostgresIdentifier):
-
-    def __init__(self, schema: Union[str, Identifier], table: [str, Identifier]):
-        super().__init__(schema=schema, name=table)
-
-
 class Schema:
     """Database relations.
 
@@ -286,6 +342,7 @@ class Schema:
 
 class PostgresFunctions:
     """A collection of PostgreSQL functions."""
+
     def __init__(self, conn: DatabaseConnection):
         self.created = []
         self.__count_nulls(conn)
@@ -331,3 +388,5 @@ class PostgresFunctions:
         except Exception as e:
             log.info(f"Failed to create function: {fname}\n{e}")
 
+    def __field_types(self, conn):
+        """Get the columns name and types for a table."""
