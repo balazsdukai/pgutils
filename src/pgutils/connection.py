@@ -261,12 +261,34 @@ class PostgresConnection(object):
             raise errors.UndefinedFunction(
                 "Create the pgutils-functions with PostgresFunctions().")
 
-    def get_head(self, table: PostgresTableIdentifier) -> List[RealDictRow]:
+    def get_head(self, table: PostgresTableIdentifier,
+                 md=False, shorten=23) -> Union[List[RealDictRow], str]:
         query = inject_parameters(
             "SELECT * FROM {table} LIMIT 5",
             {"table": table}
         )
-        return self.get_dict(query)
+        resultset =  self.get_dict(query)
+
+        if md:
+            header = " ".join(["|", " | ".join(resultset[0].keys()), "|"])
+            header_separator = " ".join(
+                ["|", " | ".join("---" for col in resultset[0].keys()), "|"])
+            mdtbl = "\n".join([header, header_separator]) + "\n"
+            for record in resultset:
+                if shorten:
+                    _vals = []
+                    for val in record.values():
+                        try:
+                            _vals.append(str(val[:24]))
+                        except TypeError:
+                            _vals.append(str(val))
+                else:
+                    _vals = map(str, record.values())
+                mdtbl += " ".join(["|" + " | ".join(_vals) + "|"]) + "\n"
+            # remove the last \n
+            return mdtbl[:-1]
+        else:
+            return resultset
 
 
 class PostgresFunctions:
