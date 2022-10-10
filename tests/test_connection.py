@@ -54,3 +54,28 @@ def test_count(conn):
 def test_head(conn):
     res = conn["conn"].get_head(conn["tblid"])
     print(res)
+
+
+def summary_md(fields, null_count):
+    if len(fields) != len(null_count):
+        return None
+    metacols = ["column", "type", "NULLs"]
+    header = " ".join(["|", " | ".join(metacols), "|"])
+    header_separator = " ".join(["|", " | ".join("---" for c in metacols), "|"])
+    mdtbl = "\n".join([header, header_separator]) + "\n"
+    _missing_vals = {rec["column_name"]: rec["missing_values"] for rec in
+                     null_count}
+    for colname, coltype in fields:
+        metarow = "| "
+        metarow += f"**{colname}**" + " | "
+        metarow += f"`{coltype}`" + " | "
+        metarow += str(_missing_vals[colname]) + " |" + "\n"
+        mdtbl += metarow
+    # remove the last \n
+    return mdtbl[:-1]
+
+def test_summary(conn):
+    fields = conn["conn"].get_fields(conn["tblid"])
+    null_count = conn["conn"].count_nulls(conn["tblid"])
+    res = summary_md(fields, null_count)
+    print(res)
