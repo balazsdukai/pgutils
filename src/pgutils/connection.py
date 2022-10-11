@@ -153,6 +153,12 @@ class PostgresConnection(object):
         else:
             self.conn = conn
 
+    @property
+    def dsn(self):
+        """PostgreSQL connection Data Source Name (DSN)."""
+        return f"PG:'dbname={self.dbname} user={self.username} port={self.port} " \
+               f"host={self.hostname} password={self.password}'"
+
     def close(self):
         """Close connection."""
         self.conn.close()
@@ -267,7 +273,7 @@ class PostgresConnection(object):
             "SELECT * FROM {table} LIMIT 5",
             {"table": table}
         )
-        resultset =  self.get_dict(query)
+        resultset = self.get_dict(query)
 
         if md:
             header = " ".join(["|", " | ".join(resultset[0].keys()), "|"])
@@ -435,4 +441,3 @@ class Schema:
             return getattr(self.__data, name)
         else:
             return Schema(self.__data[name])
-
