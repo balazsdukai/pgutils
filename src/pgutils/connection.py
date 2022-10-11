@@ -276,6 +276,9 @@ class PostgresConnection(object):
         resultset = self.get_dict(query)
 
         if md:
+            if len(resultset) == 0:
+                fields = self.get_fields(table)
+                resultset = [dict((col[0], "") for col in fields), ]
             header = " ".join(["|", " | ".join(resultset[0].keys()), "|"])
             header_separator = " ".join(
                 ["|", " | ".join("---" for col in resultset[0].keys()), "|"])

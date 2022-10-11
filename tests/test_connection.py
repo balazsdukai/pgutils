@@ -56,6 +56,11 @@ def test_head(conn):
     print(res)
 
 
+def test_head_md_empty_table(conn):
+    res = conn["conn"].get_head(conn["tblid"], md=True)
+    print(res)
+
+
 def summary_md(fields, null_count):
     if len(fields) != len(null_count):
         return None
