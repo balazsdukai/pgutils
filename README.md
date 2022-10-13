@@ -26,7 +26,7 @@ python -m pip install git+https://github.com/balazsdukai/pgutils.git pgutils
 Connect to postgres with full credentials:
 
 ```python
-from pgutils.connection import PostgresConnection
+from pgutils import PostgresConnection
 
 conn = PostgresConnection(dbname="database name",
                           hostname="host name",
@@ -39,29 +39,27 @@ conn.close()
 Or get the credentials from a `.pgpass` file:
 
 ```python
-from pgutils.connection import PostgresConnection
+from pgutils import PostgresConnection
 
 conn = PostgresConnection(dbname="database name")
 conn.close()
 ```
 
-Retrive the results of an SQL query.
+### Retrive the results of an SQL query.
 
 ```python
-from psycopg2 import sql
+from pgutils import PostgresConnection, PostgresTableIdentifier, inject_parameters
+
+conn = PostgresConnection(dbname="database name")
 
 query_params = {
-    "idx": sql.Identifier("schema.table"),
-    "tile": sql.Identifier("field")
+    "index": PostgresTableIdentifier("myschema", "mytable"),
+    "tile": "some_column"
 }
-
-query = sql.SQL(
-    """
-    SELECT DISTINCT {tile} FROM {index}
-    """
-).format(**query_params)
-
+query = inject_parameters("SELECT DISTINCT {tile} FROM {index}", query_params)
 resultset = conn.get_query(query)
+
+conn.close()
 ```
 
 The `get_query` method wraps `psycopg2.cursor.fetchall()`:
@@ -73,4 +71,20 @@ def get_query(self, query: psycopg2.sql.Composable) -> List[Tuple]:
         with self.conn.cursor() as cur:
             cur.execute(query)
             return cur.fetchall()
+```
+
+### Execute some SQL without a return value
+
+```python
+from pgutils import PostgresConnection, PostgresTableIdentifier, inject_parameters
+
+conn = PostgresConnection(dbname="database name")
+
+query_params = {
+    "table": PostgresTableIdentifier("myschema", "mytable"),
+}
+query = inject_parameters("CREATE INDEX my_index ON {table} (some_column)", query_params)
+conn.send_query(query)
+
+conn.close()
 ```

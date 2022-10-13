@@ -41,10 +41,20 @@ log = logging.getLogger(__name__)
 class PostgresIdentifier:
     """PosgreSQL identifier that stores the schema with it.
 
-    The attributes are :py:class:`psycopg2.sql.Identifier`.
+    Args:
+        schema (Union[str, :py:class:`psycopg2.sql.Identifier`]): Schema name.
+        name (Union[str, :py:class:`psycopg2.sql.Identifier`]): Relation name.
 
-    :ivar id: Relation indentifier (schema.name).
-    :type id: :py:class:`psycopg2.sql.Identifier`
+    Examples:
+        >>> mytable = PostgresIdentifier("myschema", "mytable")
+        >>> assert isinstance(mytable.schema, Identifier)
+        >>> assert isinstance(mytable.schema.string, str) and mytable.schema.string == "myschema"
+        >>> print(mytable) # The string representaion of 'mytable' is 'schema.name'.
+        myschema.mytable
+        >>> print(mytable.id) # The '.id' property returns and identfier with 'schema.name'
+        Identifier('myschema', 'mytable')
+        >>> SQL("select * from {}").format(mytable.id) # Need the '.id' when used in a SQL snippet
+        Composed([SQL('select * from '), Identifier('myschema', 'mytable')])
     """
 
     def __init__(self, schema: Union[str, Identifier], name: [str, Identifier]):
@@ -82,7 +92,12 @@ class PostgresIdentifier:
 
 
 class PostgresTableIdentifier(PostgresIdentifier):
+    """A :py:class:`PostgresIdentifier` specifically for tables.
 
+    Args:
+        schema (Union[str, :py:class:`psycopg2.sql.Identifier`]): Schema name.
+        table (Union[str, :py:class:`psycopg2.sql.Identifier`]): Table name.
+    """
     def __init__(self, schema: Union[str, Identifier], table: [str, Identifier]):
         super().__init__(schema=schema, name=table)
 
@@ -98,18 +113,11 @@ def inject_parameters(sql: Union[str, Composable], params: dict = None) -> Compo
         sql (Union[str, Composable]): A SQL query.
         params (dict): Query parameters as a dictionary.
 
-    For example:
-
-    .. code-block:: python
-
-        query = SQL('select * from {tbl} where field1 = {val};')
-
-        query_params = {
-            'tbl': PostgresTableIdentifier('myschema', 'mytable'),
-            'val': 1
-        }
-
-        inject_parameters(sql=query, params=query_params)
+    Examples:
+        >>> query = SQL('select * from {tbl} where field1 = {val};')
+        >>> query_params = {'tbl': PostgresTableIdentifier('myschema', 'mytable'), 'val': 1}
+        >>> inject_parameters(sql=query, params=query_params)
+        Composed([SQL('select * from '), Identifier('myschema', 'mytable'), SQL(' where field1 = '), Literal(1), SQL(';')])
     """
     _sql = sql if isinstance(sql, SQL) else SQL(sql)
     if params is None:
@@ -127,7 +135,8 @@ def inject_parameters(sql: Union[str, Composable], params: dict = None) -> Compo
 class PostgresConnection(object):
     """A database connection class.
 
-    :raise: :class:`psycopg2.OperationalError`
+    Raises:
+         OperationalError: If cannot establish the connection.
     """
 
     def __init__(self, conn=None, dsn=None, dbname=None, hostname=None, port=None,
@@ -155,12 +164,12 @@ class PostgresConnection(object):
 
     @property
     def dsn(self):
-        """PostgreSQL connection Data Source Name (DSN)."""
+        """PostgreSQL's connection Data Source Name (DSN)."""
         return f"PG:'dbname={self.dbname} user={self.username} port={self.port} " \
                f"host={self.hostname} password={self.password}'"
 
     def close(self):
-        """Close connection."""
+        """Close the connection."""
         self.conn.close()
         log.debug("Closed database successfully")
 
@@ -197,14 +206,10 @@ class PostgresConnection(object):
         s = query.as_string(self.conn).strip()
         return re.sub(r'[\n    ]{1,}', repl, s)
 
-    def vacuum(self, schema: str, table: str):
+    def vacuum(self, table: PostgresTableIdentifier):
         """Vacuum analyze a table."""
         self.conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-        schema = Identifier(schema)
-        table = Identifier(table)
-        query = SQL("""
-        VACUUM ANALYZE {schema}.{table};
-        """).format(schema=schema, table=table)
+        query = inject_parameters("VACUUM ANALYZE {table};", {"table": table})
         self.send_query(query)
 
     def vacuum_full(self):
@@ -250,6 +255,7 @@ class PostgresConnection(object):
         return self.get_query(query)
 
     def get_count(self, table: PostgresTableIdentifier):
+        """Get the row count on the table."""
         query = inject_parameters(
             "SELECT count(*) FROM {table}",
             {"table": table}
@@ -257,6 +263,7 @@ class PostgresConnection(object):
         return self.get_query(query)[0][0]
 
     def count_nulls(self, table: PostgresTableIdentifier) -> List[RealDictRow]:
+        """Count the number of missing values in each column in a table."""
         query = inject_parameters(
             "SELECT * FROM pgutils_count_nulls({table})",
             {"table": str(table)}
@@ -269,6 +276,15 @@ class PostgresConnection(object):
 
     def get_head(self, table: PostgresTableIdentifier,
                  md=False, shorten=23) -> Union[List[RealDictRow], str]:
+        """Get the first five rows from a table.
+
+        Args:
+            table (PostgresTableIdentifier): Table name.
+            md (bool): If true, return the result as a Markdown table.
+            shorten (int): Only used when ``md`` is ``True``. Limit the number of
+                characters of the field values in the Markdown table, in order to avoid
+                super wide tables when a value has many characters/digits.
+        """
         query = inject_parameters(
             "SELECT * FROM {table} LIMIT 5",
             {"table": table}
@@ -301,7 +317,11 @@ class PostgresConnection(object):
 
 
 class PostgresFunctions:
-    """A collection of PostgreSQL functions."""
+    """A collection of PostgreSQL helper functions.
+
+    The functions are ``CREATE OR REPLACE``-d, when this class is instantiated.
+    The list of successfully created functions are in ``PostgresFunctions().created``.
+    """
 
     def __init__(self, conn: PostgresConnection):
         self.created = []
@@ -381,7 +401,9 @@ class DatabaseRelation:
 
     Concatenation of identifiers is supported through the `+` operator.
 
-    >>> DatabaseRelation('schema') + DatabaseRelation('table')
+    Examples:
+        >>> DatabaseRelation('schema') + DatabaseRelation('table')
+        Identifier('schema', 'table')
     """
     sqlid = identifier('sqlid')
 
@@ -406,21 +428,15 @@ class Schema:
     as object attributes. Additionally, the values (eg. table name) can be
     retrieved as an escaped SQL identifier through the `sqlid` property.
 
-    >>> relations = {
-        'schema': 'tile_index',
-        'table': 'bag_index_test',
-            'fields': {
-            'geometry': 'geom',
-            'primary_key': 'id',
-            'unit_name': 'bladnr'}
-        }
-    >>> index = Schema(relations)
-    >>> index.schema
-    'tile_index'
-    >>> index.schema.identifier
-    Identifier('tile_index')
-    >>> index.schema + index.table
-    Identifier('tile_index', 'bag_index_test')
+    Examples:
+        >>> relations = {'schema': 'tile_index', 'table': 'bag_index_test', 'fields': {'geometry': 'geom', 'primary_key': 'id', 'unit_name': 'bladnr'}}
+        >>> index = Schema(relations)
+        >>> index.schema
+        tile_index
+        >>> index.schema.sqlid
+        Identifier('tile_index')
+        >>> index.schema + index.table
+        Identifier('tile_index', 'bag_index_test')
     """
 
     # TODO: skip Lists
