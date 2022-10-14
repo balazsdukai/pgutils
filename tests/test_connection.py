@@ -23,6 +23,14 @@ class TestConnection:
         conn.user = "myuser"
         assert "myuser" in conn.dsn
 
+        dsn = f"dbname={self.dbname[0]} user={self.username[0]} port={self.port[0]} host={self.hostname[0]}"
+        conn = PostgresConnection(dsn=dsn)
+        print(conn.dsn)
+        assert conn.dsn
+        print(conn.dsn_gdal)
+        conn.user = "myuser"
+        assert "myuser" in conn.dsn
+
     def test_password_none(self):
         conn = PostgresConnection(dbname=self.dbname[0], host=self.hostname[0],
                                   user=self.username[0], port=self.port[0],

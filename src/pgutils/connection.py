@@ -222,7 +222,7 @@ class PostgresConnection(object):
                                  password=self.password) as conn:
                         pass
                 else:
-                    with connect(dsn=dsn) as conn:
+                    with connect(conninfo=dsn) as conn:
                         pass
                 log.debug(f"Connection successful to {self.dsn}")
             except OperationalError:
