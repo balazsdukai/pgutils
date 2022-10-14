@@ -12,7 +12,7 @@ def conn():
         hostname=os.environ["DB_HOST"],
         username=os.environ["DB_USERNAME"],
         port=os.environ["DB_PORT"],
-        password=os.environ["DB_PASSWORD"]
+        password=os.environ.get("DB_PASSWORD")
     )
     # options=f"-c search_path={self.schema_name}",
     # cursor_factory=psycopg2.extras.DictCursor,
