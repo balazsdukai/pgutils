@@ -1,6 +1,28 @@
-from psycopg2.sql import SQL
+import os
 
-from pgutils import PostgresTableIdentifier, inject_parameters
+from psycopg.sql import SQL
+
+from pgutils import PostgresTableIdentifier, inject_parameters, PostgresConnection
+
+
+
+class TestConnection:
+    dbname = os.environ["DB_NAME"],
+    hostname = os.environ["DB_HOST"],
+    username = os.environ["DB_USERNAME"],
+    port = os.environ["DB_PORT"],
+    password = os.environ.get("DB_PASSWORD")
+
+    def test_dsn(self):
+        conn = PostgresConnection(dbname=self.dbname[0], hostname=self.hostname[0],
+                                  username=self.username[0], port=self.port[0],
+                                  password=self.password)
+        print(conn.dsn)
+        assert conn.dsn
+        print(conn.dsn_gdal)
+        conn.username = "myuser"
+        assert "myuser" in conn.dsn
+
 
 
 def test_tableref():
@@ -84,3 +106,7 @@ def test_summary(conn):
     null_count = conn["conn"].count_nulls(conn["tblid"])
     res = summary_md(fields, null_count)
     print(res)
+
+
+def test_vacuum(conn):
+    conn["conn"].vacuum(conn["tblid"])

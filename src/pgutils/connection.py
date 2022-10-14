@@ -29,11 +29,10 @@ from typing import List, Tuple, Union
 from collections import abc
 from keyword import iskeyword
 
-from psycopg2 import connect, OperationalError, Error
-from psycopg2 import errors
-from psycopg2.extras import RealDictCursor, RealDictRow
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from psycopg2.sql import Identifier, Literal, Composable, Composed, SQL
+from psycopg import connect, OperationalError, Error
+from psycopg import errors
+# from psycopg.extras import RealDictCursor, RealDictRow
+from psycopg.sql import Identifier, Literal, Composable, Composed, SQL
 
 log = logging.getLogger(__name__)
 
@@ -135,6 +134,10 @@ def inject_parameters(sql: Union[str, Composable], params: dict = None) -> Compo
 class PostgresConnection(object):
     """A database connection class.
 
+    Args:
+        dsn (str): PostgreSQL connection string https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING.
+            If provided, all the other connection parameters are set to None.
+
     Raises:
          OperationalError: If cannot establish the connection.
     """
@@ -142,22 +145,34 @@ class PostgresConnection(object):
     def __init__(self, conn=None, dsn=None, dbname=None, hostname=None, port=None,
                  username=None, password=None):
         if conn is None:
-            self.dbname = dbname
-            self.hostname = hostname
-            self.port = port
-            self.username = username
-            self.password = password
+            if dsn is not None:
+                self._dsn = dsn
+                self.dbname = None
+                self.hostname = None
+                self.port = None
+                self.username = None
+                self.password = None
+            else:
+                self._dsn = dsn
+                self.dbname = dbname
+                self.hostname = hostname
+                self.port = port
+                self.username = username
+                self.password = password
+
+            # Test if we can connect
             try:
                 if dsn is None:
-                    self.conn = connect(
-                        dbname=dbname, host=hostname, port=port, user=username,
-                        password=password
-                    )
+                    with connect(dbname=self.dbname, host=self.hostname,
+                                 port=self.port, user=self.username,
+                                 password=self.password) as conn:
+                        pass
                 else:
-                    self.conn = connect(dsn=dsn)
-                log.debug(f"Opened connection to {self.conn.get_dsn_parameters()}")
+                    with connect(dsn=dsn) as conn:
+                        pass
+                log.debug(f"Connection successful to {self.dsn}")
             except OperationalError:
-                log.exception("I'm unable to connect to the database")
+                log.exception(f"I'm unable to connect to {self.dsn}")
                 raise
         else:
             self.conn = conn
@@ -165,8 +180,17 @@ class PostgresConnection(object):
     @property
     def dsn(self):
         """PostgreSQL's connection Data Source Name (DSN)."""
-        return f"PG:'dbname={self.dbname} user={self.username} port={self.port} " \
-               f"host={self.hostname} password={self.password}'"
+        if self._dsn is not None:
+            return self._dsn
+        else:
+            return " ".join([f"dbname={self.dbname}", f"user={self.username}",
+                         f"port={self.port}", f"host={self.hostname}",
+                         f"password={self.password}"])
+
+    @property
+    def dsn_gdal(self):
+        """A DSN for using with GDAL."""
+        return f"PG:'{self.dsn}'"
 
     def close(self):
         """Close the connection."""
@@ -174,7 +198,11 @@ class PostgresConnection(object):
         log.debug("Closed database successfully")
 
     def send_query(self, query: Composable):
-        """Send a query to the DB when no results need to return (e.g. CREATE)."""
+        """Send a query to the DB when no results need to return (e.g. CREATE).
+
+        Keep in mind that only one cursor at a time can perform operations!
+        See the [Cursor class intro](https://www.psycopg.org/psycopg3/docs/api/cursors.html#cursor-classes).
+        """
         with self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(query)
@@ -186,13 +214,13 @@ class PostgresConnection(object):
                 cur.execute(query)
                 return cur.fetchall()
 
-    def get_dict(self, query: Composable) -> List[RealDictRow]:
+    def get_dict(self, query: Composable) -> List:
         """DB query where the results need to return as a dictionary."""
-        with self.conn:
-            with self.conn.cursor(
-                    cursor_factory=RealDictCursor) as cur:
-                cur.execute(query)
-                return cur.fetchall()
+        # with self.conn:
+        #     with self.conn.cursor(
+        #             cursor_factory=RealDictCursor) as cur:
+        #         cur.execute(query)
+        #         return cur.fetchall()
 
     def print_query(self, query: Composable) -> str:
         """Format a SQL query for printing by replacing newlines and tab-spaces."""
@@ -208,15 +236,19 @@ class PostgresConnection(object):
 
     def vacuum(self, table: PostgresTableIdentifier):
         """Vacuum analyze a table."""
-        self.conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        curr_autocommit = self.conn.autocommit
+        self.conn.autocommit = True
         query = inject_parameters("VACUUM ANALYZE {table};", {"table": table})
         self.send_query(query)
+        self.conn.autocommit = curr_autocommit
 
     def vacuum_full(self):
         """Vacuum analyze the whole database."""
-        self.conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        curr_autocommit = self.conn.autocommit
+        self.conn.autocommit = True
         query = SQL("VACUUM ANALYZE;")
         self.send_query(query)
+        self.conn.autocommit = curr_autocommit
 
     def check_postgis(self):
         """Check if PostGIS is installed."""
@@ -262,7 +294,7 @@ class PostgresConnection(object):
         )
         return self.get_query(query)[0][0]
 
-    def count_nulls(self, table: PostgresTableIdentifier) -> List[RealDictRow]:
+    def count_nulls(self, table: PostgresTableIdentifier) -> List:
         """Count the number of missing values in each column in a table."""
         query = inject_parameters(
             "SELECT * FROM pgutils_count_nulls({table})",
@@ -275,7 +307,7 @@ class PostgresConnection(object):
                 "Create the pgutils-functions with PostgresFunctions().")
 
     def get_head(self, table: PostgresTableIdentifier,
-                 md=False, shorten=23) -> Union[List[RealDictRow], str]:
+                 md=False, shorten=23) -> Union[List, str]:
         """Get the first five rows from a table.
 
         Args:
