@@ -14,14 +14,19 @@ class TestConnection:
     password = os.environ.get("DB_PASSWORD")
 
     def test_dsn(self):
-        conn = PostgresConnection(dbname=self.dbname[0], hostname=self.hostname[0],
-                                  username=self.username[0], port=self.port[0],
+        conn = PostgresConnection(dbname=self.dbname[0], host=self.hostname[0],
+                                  user=self.username[0], port=self.port[0],
                                   password=self.password)
         print(conn.dsn)
         assert conn.dsn
         print(conn.dsn_gdal)
-        conn.username = "myuser"
+        conn.user = "myuser"
         assert "myuser" in conn.dsn
+
+    def test_password_none(self):
+        conn = PostgresConnection(dbname=self.dbname[0], host=self.hostname[0],
+                                  user=self.username[0], port=self.port[0],
+                                  password=None)
 
 
 
@@ -47,7 +52,7 @@ def test_inject_parameters():
 
 def test_inject_parameters_str(conn):
     query = SQL("SELECT * FROM pg_namespace WHERE pg_namespace.nspname = {tbl};")
-    tbls = conn["tblid"].schema.string
+    tbls = conn["tblid"].schema.str
     query_params = {'tbl': tbls,}
     query = inject_parameters(sql=query, params=query_params)
     qstr = conn["conn"].print_query(query)

@@ -25,29 +25,94 @@ SOFTWARE.
 """
 import logging
 import re
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Dict, Any
 from collections import abc
 from keyword import iskeyword
 
 from psycopg import connect, OperationalError, Error
 from psycopg import errors
-# from psycopg.extras import RealDictCursor, RealDictRow
+from psycopg.rows import dict_row, RowMaker
 from psycopg.sql import Identifier, Literal, Composable, Composed, SQL
 
 log = logging.getLogger(__name__)
 
 
+def identifier(relation_name):
+    """Property factory for returning a :class:`psycopg.sql.Identifier`."""
+
+    def id_getter(instance):
+        return Identifier(instance.__dict__[relation_name])
+
+    def id_setter(instance, value):
+        instance.__dict__[relation_name] = value
+
+    return property(id_getter, id_setter)
+
+
+def literal(relation_name):
+    """Property factory for returning a :class:`psycopg.sql.Literal`."""
+
+    def lit_getter(instance):
+        return Literal(instance.__dict__[relation_name])
+
+    def lit_setter(instance, value):
+        instance.__dict__[relation_name] = value
+
+    return property(lit_getter, lit_setter)
+
+
 class PostgresIdentifier:
-    """PosgreSQL identifier that stores the schema with it.
+    """Database relation name.
+
+    An escaped SQL identifier of the relation name is accessible through the
+    `id` property, which returns a :class:`psycopg.sql.Identifier`.
+
+    Concatenation of identifiers is supported through the `+` operator and results
+    in a :class:`psycopg.sql.Identifier`.
+
+    Examples:
+        >>> PostgresIdentifier('schema') + PostgresIdentifier('table')
+        Identifier('schema', 'table')
+        >>> mytable = PostgresIdentifier('table')
+        >>> mytable.id
+        Identifier('table')
+        >>> print(mytable)
+        table
+        >>> mytable
+        table
+        >>> PostgresIdentifier(Identifier('schema'))
+        schema
+    """
+    id = identifier('id')
+
+    def __init__(self, relation_name):
+        self.id = relation_name
+        if isinstance(relation_name, Identifier):
+            self.str = relation_name._obj[0]
+        else:
+            self.str = relation_name
+
+    def __repr__(self):
+        return self.str
+
+    def __add__(self, other):
+        if isinstance(other, self.__class__):
+            return Identifier(self.str, other.str)
+        else:
+            raise TypeError(f"Unsupported type {other.__class__}")
+
+
+class PostgresTableIdentifier:
+    """A :py:class:`PostgresIdentifier` specifically for tables.
 
     Args:
         schema (Union[str, :py:class:`psycopg2.sql.Identifier`]): Schema name.
-        name (Union[str, :py:class:`psycopg2.sql.Identifier`]): Relation name.
+        table (Union[str, :py:class:`psycopg2.sql.Identifier`]): Table name.
 
     Examples:
-        >>> mytable = PostgresIdentifier("myschema", "mytable")
-        >>> assert isinstance(mytable.schema, Identifier)
-        >>> assert isinstance(mytable.schema.string, str) and mytable.schema.string == "myschema"
+        >>> mytable = PostgresTableIdentifier("myschema", "mytable")
+        >>> assert isinstance(mytable.schema, PostgresIdentifier)
+        >>> assert isinstance(mytable.schema.str, str) and mytable.schema.str == "myschema"
         >>> print(mytable) # The string representaion of 'mytable' is 'schema.name'.
         myschema.mytable
         >>> print(mytable.id) # The '.id' property returns and identfier with 'schema.name'
@@ -55,10 +120,10 @@ class PostgresIdentifier:
         >>> SQL("select * from {}").format(mytable.id) # Need the '.id' when used in a SQL snippet
         Composed([SQL('select * from '), Identifier('myschema', 'mytable')])
     """
-
-    def __init__(self, schema: Union[str, Identifier], name: [str, Identifier]):
+    def __init__(self, schema: Union[str, PostgresIdentifier, Identifier],
+                 table: [str, PostgresIdentifier, Identifier]):
         self.schema = schema
-        self.name = name
+        self.table = table
 
     @property
     def schema(self):
@@ -66,39 +131,28 @@ class PostgresIdentifier:
 
     @schema.setter
     def schema(self, value):
-        if isinstance(value, Identifier):
+        if isinstance(value, PostgresIdentifier):
             self._schema = value
         else:
-            self._schema = Identifier(value)
+            self._schema = PostgresIdentifier(value)
 
     @property
-    def name(self):
-        return self._name
+    def table(self):
+        return self._table
 
-    @name.setter
-    def name(self, value):
-        if isinstance(value, Identifier):
-            self._name = value
+    @table.setter
+    def table(self, value):
+        if isinstance(value, PostgresIdentifier):
+            self._table = value
         else:
-            self._name = Identifier(value)
+            self._table = PostgresIdentifier(value)
 
     @property
     def id(self):
-        return Identifier(self.schema.string, self.name.string)
+        return self.schema + self.table
 
     def __repr__(self):
-        return f'{self.schema.string}.{self.name.string}'
-
-
-class PostgresTableIdentifier(PostgresIdentifier):
-    """A :py:class:`PostgresIdentifier` specifically for tables.
-
-    Args:
-        schema (Union[str, :py:class:`psycopg2.sql.Identifier`]): Schema name.
-        table (Union[str, :py:class:`psycopg2.sql.Identifier`]): Table name.
-    """
-    def __init__(self, schema: Union[str, Identifier], table: [str, Identifier]):
-        super().__init__(schema=schema, name=table)
+        return f'{self.schema.str}.{self.table.str}'
 
 
 def inject_parameters(sql: Union[str, Composable], params: dict = None) -> Composed:
@@ -124,7 +178,7 @@ def inject_parameters(sql: Union[str, Composable], params: dict = None) -> Compo
     else:
         _params = {}
         for k, v in params.items():
-            if isinstance(v, PostgresIdentifier):
+            if isinstance(v, PostgresTableIdentifier):
                 _params[k] = v.id
             else:
                 _params[k] = Literal(v)
@@ -142,29 +196,29 @@ class PostgresConnection(object):
          OperationalError: If cannot establish the connection.
     """
 
-    def __init__(self, conn=None, dsn=None, dbname=None, hostname=None, port=None,
-                 username=None, password=None):
+    def __init__(self, conn=None, dsn=None, dbname=None, host=None, port=None,
+                 user=None, password=None):
         if conn is None:
             if dsn is not None:
                 self._dsn = dsn
                 self.dbname = None
-                self.hostname = None
+                self.host = None
                 self.port = None
-                self.username = None
+                self.user = None
                 self.password = None
             else:
                 self._dsn = dsn
                 self.dbname = dbname
-                self.hostname = hostname
+                self.host = host
                 self.port = port
-                self.username = username
+                self.user = user
                 self.password = password
 
             # Test if we can connect
             try:
                 if dsn is None:
-                    with connect(dbname=self.dbname, host=self.hostname,
-                                 port=self.port, user=self.username,
+                    with connect(dbname=self.dbname, host=self.host,
+                                 port=self.port, user=self.user,
                                  password=self.password) as conn:
                         pass
                 else:
@@ -183,9 +237,18 @@ class PostgresConnection(object):
         if self._dsn is not None:
             return self._dsn
         else:
-            return " ".join([f"dbname={self.dbname}", f"user={self.username}",
-                         f"port={self.port}", f"host={self.hostname}",
-                         f"password={self.password}"])
+            _d = []
+            if self.dbname:
+                _d.append(f"dbname={self.dbname}")
+            if self.user:
+                _d.append(f"user={self.user}")
+            if self.port:
+                _d.append(f"port={self.port}")
+            if self.host:
+                _d.append(f"host={self.host}")
+            if self.password:
+                _d.append(f"password={self.password}")
+            return " ".join(_d)
 
     @property
     def dsn_gdal(self):
@@ -194,8 +257,10 @@ class PostgresConnection(object):
 
     def close(self):
         """Close the connection."""
-        self.conn.close()
-        log.debug("Closed database successfully")
+        raise NotImplementedError(
+            "PostgresConnection methods use psycopg 3 Connection as a context manager."
+            "Currently there is no other way to manage transactions."
+        )
 
     def send_query(self, query: Composable):
         """Send a query to the DB when no results need to return (e.g. CREATE).
@@ -203,24 +268,18 @@ class PostgresConnection(object):
         Keep in mind that only one cursor at a time can perform operations!
         See the [Cursor class intro](https://www.psycopg.org/psycopg3/docs/api/cursors.html#cursor-classes).
         """
-        with self.conn:
-            with self.conn.cursor() as cur:
-                cur.execute(query)
+        with connect(self.dsn) as conn:
+            conn.execute(query)
 
     def get_query(self, query: Composable) -> List[Tuple]:
         """DB query where the results need to return (e.g. SELECT)."""
-        with self.conn:
-            with self.conn.cursor() as cur:
-                cur.execute(query)
-                return cur.fetchall()
+        with connect(self.dsn) as conn:
+            return conn.execute(query).fetchall()
 
-    def get_dict(self, query: Composable) -> List:
+    def get_dict(self, query: Composable) -> List[RowMaker[Dict[str, Any]]]:
         """DB query where the results need to return as a dictionary."""
-        # with self.conn:
-        #     with self.conn.cursor(
-        #             cursor_factory=RealDictCursor) as cur:
-        #         cur.execute(query)
-        #         return cur.fetchall()
+        with connect(self.dsn, row_factory=dict_row) as conn:
+            return conn.execute(query).fetchall()
 
     def print_query(self, query: Composable) -> str:
         """Format a SQL query for printing by replacing newlines and tab-spaces."""
@@ -231,24 +290,20 @@ class PostgresConnection(object):
             else:
                 return ' '
 
-        s = query.as_string(self.conn).strip()
+        with connect(self.dsn) as conn:
+            s = query.as_string(conn).strip()
         return re.sub(r'[\n    ]{1,}', repl, s)
 
     def vacuum(self, table: PostgresTableIdentifier):
         """Vacuum analyze a table."""
-        curr_autocommit = self.conn.autocommit
-        self.conn.autocommit = True
-        query = inject_parameters("VACUUM ANALYZE {table};", {"table": table})
-        self.send_query(query)
-        self.conn.autocommit = curr_autocommit
+        with connect(self.dsn, autocommit=True) as conn:
+            query = inject_parameters("VACUUM ANALYZE {table};", {"table": table})
+            conn.execute(query)
 
     def vacuum_full(self):
         """Vacuum analyze the whole database."""
-        curr_autocommit = self.conn.autocommit
-        self.conn.autocommit = True
-        query = SQL("VACUUM ANALYZE;")
-        self.send_query(query)
-        self.conn.autocommit = curr_autocommit
+        with connect(self.dsn, autocommit=True) as conn:
+            conn.execute("VACUUM ANALYZE;")
 
     def check_postgis(self):
         """Check if PostGIS is installed."""
@@ -281,8 +336,8 @@ class PostgresConnection(object):
         ORDER BY
             attnum ASC;
         """
-        query = inject_parameters(_q, {"schema": table.schema.string,
-                                       "table": table.name.string})
+        query = inject_parameters(_q, {"schema": table.schema.str,
+                                       "table": table.table.str})
         log.debug(self.print_query(query))
         return self.get_query(query)
 
@@ -399,58 +454,6 @@ class PostgresFunctions:
             self.created.append(fname)
         except Exception as e:
             log.info(f"Failed to create function: {fname}\n{e}")
-
-
-def identifier(relation_name):
-    """Property factory for returning a :class:`psycopg2.sql.Identifier`."""
-
-    def id_getter(instance):
-        return Identifier(instance.__dict__[relation_name])
-
-    def id_setter(instance, value):
-        instance.__dict__[relation_name] = value
-
-    return property(id_getter, id_setter)
-
-
-def literal(relation_name):
-    """Property factory for returning a :class:`psycopg2.sql.Literal`."""
-
-    def lit_getter(instance):
-        return Literal(instance.__dict__[relation_name])
-
-    def lit_setter(instance, value):
-        instance.__dict__[relation_name] = value
-
-    return property(lit_getter, lit_setter)
-
-
-class DatabaseRelation:
-    """Database relation name.
-
-    An escaped SQL identifier of the relation name is accessible through the
-    `sqlid` property, which returns a :class:`psycopg2.sql.Identifier`.
-
-    Concatenation of identifiers is supported through the `+` operator.
-
-    Examples:
-        >>> DatabaseRelation('schema') + DatabaseRelation('table')
-        Identifier('schema', 'table')
-    """
-    sqlid = identifier('sqlid')
-
-    def __init__(self, relation_name):
-        self.sqlid = relation_name
-        self.string = relation_name
-
-    def __repr__(self):
-        return self.string
-
-    def __add__(self, other):
-        if isinstance(other, self.__class__):
-            return Identifier(self.string, other.string)
-        else:
-            raise TypeError(f"Unsupported type {other.__class__}")
 
 
 class Schema:
