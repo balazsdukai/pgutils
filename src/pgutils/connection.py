@@ -262,19 +262,40 @@ class PostgresConnection(object):
             "Currently there is no other way to manage transactions."
         )
 
-    def send_query(self, query: Composable):
+    def send_query(self, query: Composable, query_params: dict = None):
         """Send a query to the DB when no results need to return (e.g. CREATE).
 
         Keep in mind that only one cursor at a time can perform operations!
         See the [Cursor class intro](https://www.psycopg.org/psycopg3/docs/api/cursors.html#cursor-classes).
+
+        Args:
+            query: A SQL snippet.
+            query_params: Optional parameters to pass to the SQL.
+                See :py:func:`inject_parameters`.
         """
         with connect(self.dsn) as conn:
-            conn.execute(query)
+            if query_params is not None:
+                _q = inject_parameters(query, query_params)
+            else:
+                _q = query
+            return conn.execute(_q)
 
-    def get_query(self, query: Composable) -> List[Tuple]:
-        """DB query where the results need to return (e.g. SELECT)."""
+    def get_query(self, query: Composable, query_params: dict = None) -> List[Tuple]:
+        """DB query where the results need to return (e.g. SELECT).
+
+        It returns the complete resultset with ``.fetchall()``.
+
+        Args:
+            query: A SQL snippet.
+            query_params: Optional parameters to pass to the SQL.
+                See :py:func:`inject_parameters`.
+        """
         with connect(self.dsn) as conn:
-            return conn.execute(query).fetchall()
+            if query_params is not None:
+                _q = inject_parameters(query, query_params)
+            else:
+                _q = query
+            return conn.execute(_q).fetchall()
 
     def get_dict(self, query: Composable) -> List[RowMaker[Dict[str, Any]]]:
         """DB query where the results need to return as a dictionary."""
