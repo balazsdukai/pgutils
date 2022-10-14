@@ -1,6 +1,6 @@
 # pgutils – A minimal package for querying PostgreSQL
 
-This package provides a couple of funcitons to make working with psycopg2 even quicker.
+This package provides a couple of funcitons to make working with psycopg even quicker.
 It naturally evolved from the patterns that I use for database access in several packages, so it made sense to extract it into a standalone package, instead of keep copying the module from one package to another.
 
 There were two guiding principles for developing the functions:
@@ -29,11 +29,10 @@ Connect to postgres with full credentials:
 from pgutils import PostgresConnection
 
 conn = PostgresConnection(dbname="database name",
-                          hostname="host name",
+                          host="host name",
                           port=1234,
-                          username="user name",
+                          user="user name",
                           password="password")
-conn.close()
 ```
 
 Or get the credentials from a `.pgpass` file:
@@ -43,6 +42,19 @@ from pgutils import PostgresConnection
 
 conn = PostgresConnection(dbname="database name")
 conn.close()
+```
+
+However, `PostgresConnection` **does not return an active Connection**.
+The `PostgresConnection` object stores the connection parameters so that its methods can connect to the database and execute the queries.
+This is in line with the recommendations of [psycopg3](https://www.psycopg.org/psycopg3/docs/basic/usage.html#connection-context).
+Thus, the methods of `PostgresConnection` initiate and close their own connection, by using the Psycopg 3 Connection as a context manager.
+
+For instance:
+
+```python
+def send_query(self, query: Composable):
+    with connect(self.dsn) as conn:
+        conn.execute(query)
 ```
 
 ### Retrive the results of an SQL query.
@@ -62,15 +74,13 @@ resultset = conn.get_query(query)
 conn.close()
 ```
 
-The `get_query` method wraps `psycopg2.cursor.fetchall()`:
+The `get_query` method wraps `psycopg.cursor.fetchall()`:
 
 ```python
-def get_query(self, query: psycopg2.sql.Composable) -> List[Tuple]:
+def get_query(self, query: psycopg.sql.Composable) -> List[Tuple]:
     """DB query where the results need to return (e.g. SELECT)."""
-    with self.conn:
-        with self.conn.cursor() as cur:
-            cur.execute(query)
-            return cur.fetchall()
+    with connect(self.dsn) as conn:
+        return conn.execute(query).fetchall()
 ```
 
 ### Execute some SQL without a return value
@@ -85,6 +95,4 @@ query_params = {
 }
 query = inject_parameters("CREATE INDEX my_index ON {table} (some_column)", query_params)
 conn.send_query(query)
-
-conn.close()
 ```

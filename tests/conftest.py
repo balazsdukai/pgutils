@@ -9,8 +9,8 @@ from connection import PostgresConnection, PostgresTableIdentifier, PostgresFunc
 def conn():
     conn = PostgresConnection(
         dbname=os.environ["DB_NAME"],
-        hostname=os.environ["DB_HOST"],
-        username=os.environ["DB_USERNAME"],
+        host=os.environ["DB_HOST"],
+        user=os.environ["DB_USERNAME"],
         port=os.environ["DB_PORT"],
         password=os.environ.get("DB_PASSWORD")
     )
@@ -19,8 +19,7 @@ def conn():
 
     PostgresFunctions(conn)
 
-    yield dict(conn=conn, schema=os.environ["DB_SCHEMA"],
+    return dict(conn=conn, schema=os.environ["DB_SCHEMA"],
                table=os.environ["DB_TABLE"],
                tblid = PostgresTableIdentifier(os.environ["DB_SCHEMA"],
                                                os.environ["DB_TABLE"]))
-    conn.close()

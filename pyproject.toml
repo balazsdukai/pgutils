@@ -19,7 +19,7 @@ classifiers = [
 ]
 urls = { github = "https://github.com/balazsdukai/pgutils" }
 dependencies = [
-    "psycopg2-binary"
+    "psycopg[binary]"
 ]
 optional-dependencies = { dev = ["pytest", "bumpver", "tox"] }
 

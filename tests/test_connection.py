@@ -1,6 +1,33 @@
-from psycopg2.sql import SQL
+import os
 
-from pgutils import PostgresTableIdentifier, inject_parameters
+from psycopg.sql import SQL
+
+from pgutils import PostgresTableIdentifier, inject_parameters, PostgresConnection
+
+
+
+class TestConnection:
+    dbname = os.environ["DB_NAME"],
+    hostname = os.environ["DB_HOST"],
+    username = os.environ["DB_USERNAME"],
+    port = os.environ["DB_PORT"],
+    password = os.environ.get("DB_PASSWORD")
+
+    def test_dsn(self):
+        conn = PostgresConnection(dbname=self.dbname[0], host=self.hostname[0],
+                                  user=self.username[0], port=self.port[0],
+                                  password=self.password)
+        print(conn.dsn)
+        assert conn.dsn
+        print(conn.dsn_gdal)
+        conn.user = "myuser"
+        assert "myuser" in conn.dsn
+
+    def test_password_none(self):
+        conn = PostgresConnection(dbname=self.dbname[0], host=self.hostname[0],
+                                  user=self.username[0], port=self.port[0],
+                                  password=None)
+
 
 
 def test_tableref():
@@ -25,7 +52,7 @@ def test_inject_parameters():
 
 def test_inject_parameters_str(conn):
     query = SQL("SELECT * FROM pg_namespace WHERE pg_namespace.nspname = {tbl};")
-    tbls = conn["tblid"].schema.string
+    tbls = conn["tblid"].schema.str
     query_params = {'tbl': tbls,}
     query = inject_parameters(sql=query, params=query_params)
     qstr = conn["conn"].print_query(query)
@@ -84,3 +111,7 @@ def test_summary(conn):
     null_count = conn["conn"].count_nulls(conn["tblid"])
     res = summary_md(fields, null_count)
     print(res)
+
+
+def test_vacuum(conn):
+    conn["conn"].vacuum(conn["tblid"])
