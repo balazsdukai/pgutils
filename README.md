@@ -41,7 +41,6 @@ Or get the credentials from a `.pgpass` file:
 from pgutils import PostgresConnection
 
 conn = PostgresConnection(dbname="database name")
-conn.close()
 ```
 
 However, `PostgresConnection` **does not return an active Connection**.
@@ -70,8 +69,6 @@ query_params = {
 }
 query = inject_parameters("SELECT DISTINCT {tile} FROM {index}", query_params)
 resultset = conn.get_query(query)
-
-conn.close()
 ```
 
 The `get_query` method wraps `psycopg.cursor.fetchall()`:
