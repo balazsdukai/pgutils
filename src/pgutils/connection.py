@@ -197,7 +197,7 @@ class PostgresConnection(object):
     """
 
     def __init__(self, conn=None, dsn=None, dbname=None, host=None, port=None,
-                 user=None, password=None):
+                 user=None, password=None, **otherparams):
         if conn is None:
             if dsn is not None:
                 self._dsn = dsn
@@ -206,6 +206,7 @@ class PostgresConnection(object):
                 self.port = None
                 self.user = None
                 self.password = None
+                self.otherparams = None
             else:
                 self._dsn = dsn
                 self.dbname = dbname
@@ -213,13 +214,14 @@ class PostgresConnection(object):
                 self.port = port
                 self.user = user
                 self.password = password
+                self.otherparams = otherparams
 
             # Test if we can connect
             try:
                 if dsn is None:
                     with connect(dbname=self.dbname, host=self.host,
                                  port=self.port, user=self.user,
-                                 password=self.password) as conn:
+                                 password=self.password, **self.otherparams) as conn:
                         pass
                 else:
                     with connect(conninfo=dsn) as conn:
@@ -248,6 +250,9 @@ class PostgresConnection(object):
                 _d.append(f"host={self.host}")
             if self.password:
                 _d.append(f"password={self.password}")
+            if self.otherparams:
+                for key, val in self.otherparams.items():
+                    _d.append(f"{key}={val}")
             return " ".join(_d)
 
     @property
