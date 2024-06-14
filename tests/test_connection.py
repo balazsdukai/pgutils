@@ -1,5 +1,6 @@
 import os
 
+import psycopg
 from psycopg.sql import SQL
 
 from pgutils import PostgresTableIdentifier, inject_parameters, PostgresConnection
@@ -35,6 +36,22 @@ class TestConnection:
         conn = PostgresConnection(dbname=self.dbname[0], host=self.hostname[0],
                                   user=self.username[0], port=self.port[0],
                                   password=None)
+
+    def test_init_with_conn(self):
+        p_conn_kwargs = psycopg.connect(dbname=self.dbname[0], host=self.hostname[0],
+                                        user=self.username[0], port=self.port[0],
+                                        password=self.password)
+        conn = PostgresConnection(conn=p_conn_kwargs)
+        print(conn.dsn)
+        assert conn.dsn
+        print(conn.dsn_gdal)
+
+        p_conn_string = psycopg.connect(
+            f"dbname={self.dbname[0]} host={self.hostname[0]} user={self.username[0]} port={self.port[0]} password={self.password}")
+        conn = PostgresConnection(conn=p_conn_string)
+        print(conn.dsn)
+        assert conn.dsn
+        print(conn.dsn_gdal)
 
 
 

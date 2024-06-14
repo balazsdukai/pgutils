@@ -29,6 +29,7 @@ from typing import List, Tuple, Union, Dict, Any
 from collections import abc
 from keyword import iskeyword
 
+import psycopg
 from psycopg import connect, OperationalError, Error
 from psycopg import errors
 from psycopg.rows import dict_row, RowMaker
@@ -189,6 +190,7 @@ class PostgresConnection(object):
     """A database connection class.
 
     Args:
+        conn (psycopg.Connection): A psycopg connection.
         dsn (str): PostgreSQL connection string https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING.
             If provided, all the other connection parameters are set to None.
 
@@ -196,7 +198,8 @@ class PostgresConnection(object):
          OperationalError: If cannot establish the connection.
     """
 
-    def __init__(self, conn=None, dsn=None, dbname=None, host=None, port=None,
+    def __init__(self, conn: psycopg.Connection = None, dsn=None, dbname=None,
+                 host=None, port=None,
                  user=None, password=None, **otherparams):
         if conn is None:
             if dsn is not None:
@@ -232,6 +235,14 @@ class PostgresConnection(object):
                 raise
         else:
             self.conn = conn
+            self._dsn = None
+            self.dbname = conn.info.dbname
+            self.host = conn.info.host
+            self.port = conn.info.port
+            self.user = conn.info.user
+            self.password = conn.info.password
+            self.otherparams = {k: v for k, v in conn.info.get_parameters().items() if
+                                k not in ["user", "dbname", "host", "port"]}
 
     @property
     def dsn(self):
