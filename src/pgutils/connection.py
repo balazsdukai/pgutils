@@ -505,7 +505,7 @@ class Schema:
         >>> index = Schema(relations)
         >>> index.schema
         tile_index
-        >>> index.schema.sqlid
+        >>> index.schema.id
         Identifier('tile_index')
         >>> index.schema + index.table
         Identifier('tile_index', 'bag_index_test')
@@ -518,7 +518,7 @@ class Schema:
         elif isinstance(arg, abc.MutableSequence):
             return [cls(item) for item in arg]
         else:
-            return DatabaseRelation(arg)
+            return PostgresIdentifier(arg)
 
     def __init__(self, mapping):
         self.__data = {}
