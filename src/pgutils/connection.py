@@ -271,6 +271,13 @@ class PostgresConnection(object):
         """A DSN for using with GDAL."""
         return f"PG:'{self.dsn}'"
 
+    def connect(self) -> psycopg.Connection:
+        """Connect to a PostgreSQL database.
+
+        Returns: psycopg.Connection
+        """
+        return psycopg.connect(self.dsn)
+
     def close(self):
         """Close the connection."""
         raise NotImplementedError(

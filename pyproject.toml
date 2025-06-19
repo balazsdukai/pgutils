@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pgutils"
 version = "2024.1013"
-description = "Wrappers around psycopg2 functions to make life easier. No ORM."
+description = "Wrappers around psycopg functions to make life easier. No ORM."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT License" }
