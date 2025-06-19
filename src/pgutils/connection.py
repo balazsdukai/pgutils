@@ -179,8 +179,10 @@ def inject_parameters(sql: Union[str, Composable], params: dict = None) -> Compo
     else:
         _params = {}
         for k, v in params.items():
-            if isinstance(v, PostgresTableIdentifier):
+            if isinstance(v, PostgresTableIdentifier) or isinstance(v, PostgresIdentifier):
                 _params[k] = v.id
+            elif isinstance(v, Identifier):
+                _params[k] = v
             else:
                 _params[k] = Literal(v)
         return _sql.format(**_params)
