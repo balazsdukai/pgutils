@@ -7,7 +7,7 @@ name = "pgutils"
 version = "2024.1013"
 description = "Wrappers around psycopg functions to make life easier. No ORM."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 license = { text = "MIT License" }
 authors = [
     { name = "Balázs Dukai", email = "balazs@balazsdukai.me" }
