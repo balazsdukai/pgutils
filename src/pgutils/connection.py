@@ -28,6 +28,7 @@ import re
 from typing import List, Tuple, Union, Dict, Any
 from collections import abc
 from keyword import iskeyword
+from copy import deepcopy
 
 import psycopg
 from psycopg import connect, OperationalError, Error
@@ -231,9 +232,15 @@ class PostgresConnection(object):
                 else:
                     with connect(conninfo=dsn) as conn:
                         pass
-                log.debug(f"Connection successful to {self.dsn}")
+                _creds = deepcopy(self)
+                _creds.password = None
+                log.debug(f"Connection successful to {_creds.dsn}")
+                del _creds
             except OperationalError:
-                log.exception(f"I'm unable to connect to {self.dsn}")
+                _creds = deepcopy(self)
+                _creds.password = None
+                log.exception(f"I'm unable to connect to {_creds.dsn}")
+                del _creds
                 raise
         else:
             self.conn = conn

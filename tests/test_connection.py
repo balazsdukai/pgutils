@@ -65,14 +65,15 @@ def test_tableref():
 
 
 def test_inject_parameters():
-    query = SQL('select * from {tbl} where field1 = {val};')
+    query_0 = SQL("with sub as (select * from {tbl})").format(tbl=psycopg.sql.Identifier('myschema', 'mytable2'))
     query_params = {
         'tbl': PostgresTableIdentifier('myschema', 'mytable'),
-        'val': 1
+        'val': 1,
     }
-    query = inject_parameters(sql=query, params=query_params)
-    expect = "Composed([SQL('select * from '), Identifier('myschema', 'mytable'), SQL(' where field1 = '), Literal(1), SQL(';')])"
-    assert str(query) == expect
+    query_1 = inject_parameters(sql=SQL('select * from {tbl} where field1 = {val};'), params=query_params)
+    s = psycopg.sql.Composed([query_0, query_1]).join(" ").as_string()
+    expect = 'with sub as (select * from "myschema"."mytable2") select * from "myschema"."mytable" where field1 = 1;'
+    assert s == expect
 
 
 def test_inject_parameters_str(conn):
@@ -81,7 +82,7 @@ def test_inject_parameters_str(conn):
     query_params = {'tbl': tbls,}
     query = inject_parameters(sql=query, params=query_params)
     qstr = conn["conn"].print_query(query)
-    expect = "SELECT * FROM pg_namespace WHERE pg_namespace.nspname = 'wippolder';"
+    expect = "SELECT * FROM pg_namespace WHERE pg_namespace.nspname = 'public';"
     assert qstr == expect
 
 
