@@ -328,7 +328,6 @@ class PostgresConnection(object):
             else:
                 _q = query
             return conn.execute(_q).fetchall()
-        return None
 
     def get_dict(self, query: Composable, query_params: dict = None) -> List[RowMaker[Dict[str, Any]]]:
         """DB query where the results need to return as a dictionary."""
@@ -337,8 +336,7 @@ class PostgresConnection(object):
                 _q = inject_parameters(query, query_params)
             else:
                 _q = query
-            return conn.execute(query).fetchall()
-        return None
+            return conn.execute(_q).fetchall()
 
     def print_query(self, query: Composable) -> str:
         """Format a SQL query for printing by replacing newlines and tab-spaces."""
