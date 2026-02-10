@@ -413,6 +413,7 @@ class PostgresConnection(object):
             {"table": str(table)}
         )
         try:
+            PostgresFunctions(self.conn)
             return self.get_dict(query)
         except errors.UndefinedFunction:
             raise errors.UndefinedFunction(
